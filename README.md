@@ -6,8 +6,9 @@ The development dashboard uses a separate mock API for demo sign-in, assigned
 modules, quota, requests, sessions, usage history, settings, and basic admin
 operations. Applications
 open in separate tabs. No real AI provider or notification service is called.
-Demo tokens are held in memory, not localStorage. Data from the earlier
-localStorage prototype is not imported or deleted.
+Demo tokens are held in memory, not localStorage. The selected employee ID is
+saved separately under `bunzl-demo-employee-session-v1` and restored after a
+refresh. Data from the earlier localStorage prototype is not imported or deleted.
 
 ### Run the demo
 
@@ -29,10 +30,12 @@ In a second terminal, start the frontend:
 npm run dev
 ```
 
-Open the frontend address printed by Vite. Choose a demo profile and sign in.
+Open the frontend address printed by Vite. Choose an employee and select Login.
+The three employee names use the existing shared demo account and usage balance;
+their IDs are presentation-only and do not provide real authentication or
+per-employee permissions. Logout clears the selected employee session only.
 Open Spark, submit a request in the new tab, select **Exit session**, and return
-to the portal. The session summary and refreshed quota will appear. The limited
-profile demonstrates that unassigned applications are hidden.
+to the portal. The session summary and refreshed quota will appear.
 
 The mock listens on `127.0.0.1:3001` and stores data only in server memory;
 restarting it resets the demo. Vite proxies `/api` to the mock in development.

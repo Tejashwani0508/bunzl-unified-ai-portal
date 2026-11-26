@@ -8,22 +8,46 @@ import ApiUsage from './pages/ApiUsage'
 import ApiSettings from './pages/ApiSettings'
 import ApiAdmin from './pages/ApiAdmin'
 import DemoModule from './pages/DemoModule'
+import { DEMO_EMPLOYEE_SESSION_KEY, demoEmployees, findDemoEmployee } from './config/demoEmployees'
+import type { DemoEmployee } from './config/demoEmployees'
 import { api, ApiError, demoMode, errorMessage } from './services/api'
 import type { Module, Session, User } from './services/api'
 
-interface Auth { token: string; user: User }
+interface Auth { token: string; user: User; employee: DemoEmployee }
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: (count, error) => !(error instanceof ApiError && error.status < 500) && count < 2, refetchOnWindowFocus: true } },
 })
 
-function Login({ onLogin }: { onLogin: (auth: Auth) => void }) {
-  const [fixture, setFixture] = useState('employee')
-  const [error, setError] = useState('')
+function readDemoSession(): { employee: DemoEmployee | undefined; error: string } {
+  if (!demoMode) return { employee: undefined, error: '' }
+  try {
+    const id = localStorage.getItem(DEMO_EMPLOYEE_SESSION_KEY)
+    if (id === null) return { employee: undefined, error: '' }
+    const employee = findDemoEmployee(id)
+    return employee
+      ? { employee, error: '' }
+      : { employee: undefined, error: 'The saved demo session is invalid. Please select an employee and log in again.' }
+  } catch {
+    return { employee: undefined, error: 'Unable to read your demo session in this browser. Check your storage settings.' }
+  }
+}
+
+function Login({ onLogin, initialError }: { onLogin: (auth: Auth) => void; initialError: string }) {
+  const [fixture, setFixture] = useState('')
+  const [error, setError] = useState(initialError)
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
   async function login() {
+    const employee = findDemoEmployee(fixture)
+    if (!employee) { setError('Please select an employee to continue.'); return }
     setBusy(true); setError('')
-    try { onLogin(await api.login(fixture)); navigate('/home') }
+    try {
+      const result = await api.login('employee')
+      try { localStorage.setItem(DEMO_EMPLOYEE_SESSION_KEY, employee.id) }
+      catch { throw new Error('Unable to save your demo session in this browser. Check your storage settings and try again.') }
+      onLogin({ ...result, employee })
+      navigate('/home')
+    }
     catch (failure) { setError(errorMessage(failure)) }
     finally { setBusy(false) }
   }
@@ -34,9 +58,9 @@ function Login({ onLogin }: { onLogin: (auth: Auth) => void }) {
       <p>Sign in with a demo profile to explore your assigned AI applications.</p>
       <div className="demo-banner login-banner">DEMO MODE · No real authentication</div>
       <label htmlFor="fixture">Demo profile</label>
-      <select id="fixture" value={fixture} onChange={(event) => setFixture(event.target.value)}><option value="employee">Employee</option><option value="limited">Employee with limited access</option><option value="admin">Administrator</option></select>
-      {error && <p className="form-error" role="alert">{error}</p>}
-      <button className="open-button login-button" onClick={login} disabled={busy}>{busy ? 'Signing in...' : 'Continue to portal'}</button>
+      <select id="fixture" value={fixture} onChange={(event) => { setFixture(event.target.value); setError('') }} aria-invalid={Boolean(error)} aria-describedby={error ? 'login-error' : undefined}><option value="" disabled>Select an employee</option>{demoEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select>
+      {error && <p id="login-error" className="form-error" role="alert">{error}</p>}
+      <button className="open-button login-button" onClick={login} disabled={busy}>{busy ? 'Signing in...' : 'Login'}</button>
     </> : <p role="alert">Production sign-in is not configured. Entra and the approved backend integration must be implemented before deployment.</p>}
   </div></div>
 }
@@ -71,7 +95,7 @@ function SessionDialog({ session, onClose, onUsage }: { session: Session; onClos
   </div></div>
 }
 
-function Portal({ auth, onSignOut }: { auth: Auth; onSignOut: () => void }) {
+function Portal({ auth, onSignOut, sessionError }: { auth: Auth; onSignOut: () => void; sessionError: string }) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [launching, setLaunching] = useState<string | null>(null)
@@ -133,10 +157,11 @@ function Portal({ auth, onSignOut }: { auth: Auth; onSignOut: () => void }) {
   const loading = modules.isPending || quota.isPending || breakdown.isPending
   const failure = (!modules.data && modules.error) || (!quota.data && quota.error) || (!breakdown.data && breakdown.error)
   return <div className={`portal ${collapsed ? 'sidebar-collapsed' : ''}`}>
-    <Header user={auth.user} quota={quota.data} onMenu={() => setMobileOpen(!mobileOpen)} onSignOut={onSignOut} />
+    <Header employee={auth.employee} quota={quota.data} onMenu={() => setMobileOpen(!mobileOpen)} onSignOut={onSignOut} />
     {mobileOpen && <button className="drawer-backdrop" onClick={() => setMobileOpen(false)} aria-label="Close navigation" />}
     <Sidebar collapsed={collapsed} mobileOpen={mobileOpen} isAdmin={auth.user.roles.includes('admin')} onToggle={() => setCollapsed(!collapsed)} onNavigate={() => setMobileOpen(false)} />
     <main className="main-content"><div className="demo-banner">DEMO MODE · Simulated identity, applications and usage</div><div className="content-wrap">
+      {sessionError && <div className="storage-warning" role="alert">{sessionError}</div>}
       {sessionExpired && <div className="storage-warning" role="alert">Your session has expired. <button onClick={onSignOut}>Sign in again</button></div>}
       {launchError && <div className="storage-warning" role="alert">{launchError} {fallbackUrl && <a href={fallbackUrl} target="_blank" rel="noopener noreferrer">Open application</a>}</div>}
       {sessions.isError && <div className="storage-warning" role="alert">Session updates could not be refreshed: {errorMessage(sessions.error)} <button onClick={() => sessions.refetch()}>Retry</button></div>}
@@ -145,7 +170,7 @@ function Portal({ auth, onSignOut }: { auth: Auth; onSignOut: () => void }) {
         <Routes>
           <Route path="/home" element={<Home modules={modules.data.filter((item) => item.isEnabled)} quota={quota.data} breakdown={breakdown.data} onOpen={openModule} onRetry={() => { void modules.refetch() }} launching={launching} />} />
           <Route path="/usage" element={<ApiUsage token={auth.token} modules={modules.data} quota={quota.data} />} />
-          <Route path="/settings" element={<ApiSettings token={auth.token} user={auth.user} />} />
+          <Route path="/settings" element={<ApiSettings token={auth.token} user={{ ...auth.user, displayName: auth.employee.name }} />} />
           <Route path="/admin/users" element={auth.user.roles.includes('admin') ? <ApiAdmin token={auth.token} modules={modules.data} currentUserId={auth.user.id} /> : <Navigate to="/access-denied" replace />} />
           <Route path="/admin/reports" element={auth.user.roles.includes('admin') ? <ApiAdmin token={auth.token} modules={modules.data} currentUserId={auth.user.id} reports /> : <Navigate to="/access-denied" replace />} />
           <Route path="/access-denied" element={<div className="empty-panel"><h1>Access denied</h1><p>You do not have permission to view this page.</p></div>} />
@@ -160,12 +185,32 @@ function Portal({ auth, onSignOut }: { auth: Auth; onSignOut: () => void }) {
 
 function AppRoutes() {
   const [auth, setAuth] = useState<Auth | null>(null)
+  const [savedSession] = useState(readDemoSession)
+  const [restoring, setRestoring] = useState(Boolean(savedSession.employee))
+  const [sessionError, setSessionError] = useState(savedSession.error)
   const client = useQueryClient()
-  function signOut() { client.clear(); setAuth(null) }
+  useEffect(() => {
+    const employee = savedSession.employee
+    if (!employee) return
+    let active = true
+    api.login('employee')
+      .then((result) => { if (active) setAuth({ ...result, employee }) })
+      .catch((failure: unknown) => { if (active) setSessionError(`Unable to restore your demo session: ${errorMessage(failure)}`) })
+      .finally(() => { if (active) setRestoring(false) })
+    return () => { active = false }
+  }, [savedSession])
+  function signOut() {
+    try { localStorage.removeItem(DEMO_EMPLOYEE_SESSION_KEY) }
+    catch { setSessionError('Unable to clear your demo session. Check your browser storage settings and try again.'); return }
+    client.clear()
+    setSessionError('')
+    setAuth(null)
+  }
+  if (restoring) return <div className="login-screen"><div className="login-card"><p role="status">Restoring demo session...</p></div></div>
   return <Routes>
     <Route path="/demo/:moduleName" element={<DemoModule />} />
-    <Route path="/login" element={auth ? <Navigate to="/home" replace /> : <Login onLogin={setAuth} />} />
-    <Route path="*" element={auth ? <Portal auth={auth} onSignOut={signOut} /> : <Navigate to="/login" replace />} />
+    <Route path="/login" element={auth ? <Navigate to="/home" replace /> : <Login onLogin={(result) => { setSessionError(''); setAuth(result) }} initialError={sessionError} />} />
+    <Route path="*" element={auth ? <Portal auth={auth} onSignOut={signOut} sessionError={sessionError} /> : <Navigate to="/login" replace />} />
   </Routes>
 }
 

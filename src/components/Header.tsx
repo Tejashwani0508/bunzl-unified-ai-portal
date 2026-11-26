@@ -1,14 +1,15 @@
 import { LogOut, Menu, UserRound } from 'lucide-react'
-import type { Quota, User } from '../services/api'
+import type { DemoEmployee } from '../config/demoEmployees'
+import type { Quota } from '../services/api'
 
 interface HeaderProps {
-  user: User
+  employee: DemoEmployee
   quota?: Quota
   onMenu: () => void
   onSignOut: () => void
 }
 
-export default function Header({ user, quota, onMenu, onSignOut }: HeaderProps) {
+export default function Header({ employee, quota, onMenu, onSignOut }: HeaderProps) {
   return (
     <header className="header">
       <button className="mobile-menu" onClick={onMenu} aria-label="Toggle navigation"><Menu size={22} /></button>
@@ -20,8 +21,8 @@ export default function Header({ user, quota, onMenu, onSignOut }: HeaderProps) 
       <div className="header-user">
         {quota && <span className="header-quota">{quota.remaining.toLocaleString('en-US')} tokens left</span>}
         <div className="user-avatar"><UserRound size={19} aria-hidden="true" /></div>
-        <div className="user-details"><div className="user-name">{user.displayName}</div><div className="session"><span />Demo session</div></div>
-        <button className="sign-out" onClick={onSignOut} title="Sign out" aria-label="Sign out"><LogOut size={18} /></button>
+        <div className="user-details"><div className="user-name">{employee.name} · {employee.designation}</div><div className="session"><span />Demo session</div></div>
+        <button className="sign-out" onClick={onSignOut} title="Logout" aria-label="Logout"><LogOut size={18} /></button>
       </div>
     </header>
   )

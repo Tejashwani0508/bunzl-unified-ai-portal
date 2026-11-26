@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test'
 
 test('only assigned modules are shown for the limited demo user', async ({ page }) => {
+  await page.route('**/api/demo/login', (route) => route.continue({ postData: JSON.stringify({ userId: 'limited' }) }))
   await page.goto('/home')
   await expect(page).toHaveURL(/\/login$/)
-  await page.getByLabel('Demo profile').selectOption('limited')
-  await page.getByRole('button', { name: 'Continue to portal' }).click()
+  await page.getByLabel('Demo profile').selectOption('EMP001')
+  await page.getByRole('button', { name: 'Login' }).click()
   await expect(page.getByRole('heading', { name: 'Welcome to Bunzl Unified AI Portal' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open Spark' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open MatchPoint' })).toHaveCount(0)
@@ -13,7 +14,8 @@ test('only assigned modules are shown for the limited demo user', async ({ page 
 
 test('a demo request is metered by the API and summarized on return', async ({ page, context }) => {
   await page.goto('/login')
-  await page.getByRole('button', { name: 'Continue to portal' }).click()
+  await page.getByLabel('Demo profile').selectOption('EMP001')
+  await page.getByRole('button', { name: 'Login' }).click()
   await expect(page.getByRole('button', { name: 'Open Spark' })).toBeVisible()
   const opened = context.waitForEvent('page')
   await page.getByRole('button', { name: 'Open Spark' }).click()
@@ -34,10 +36,11 @@ test('a demo request is metered by the API and summarized on return', async ({ p
 })
 
 test('mobile navigation is accessible without horizontal overflow', async ({ page }) => {
+  await page.route('**/api/demo/login', (route) => route.continue({ postData: JSON.stringify({ userId: 'limited' }) }))
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/login')
-  await page.getByLabel('Demo profile').selectOption('limited')
-  await page.getByRole('button', { name: 'Continue to portal' }).click()
+  await page.getByLabel('Demo profile').selectOption('EMP001')
+  await page.getByRole('button', { name: 'Login' }).click()
   await expect(page.getByRole('heading', { name: 'Welcome to Bunzl Unified AI Portal' })).toBeVisible()
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.getByRole('button', { name: 'Toggle navigation' }).click()
@@ -47,17 +50,20 @@ test('mobile navigation is accessible without horizontal overflow', async ({ pag
 })
 
 test('admin can assign a module and regular users cannot open admin pages', async ({ page }) => {
+  let fixture = 'admin'
+  await page.route('**/api/demo/login', (route) => route.continue({ postData: JSON.stringify({ userId: fixture }) }))
   await page.goto('/login')
-  await page.getByLabel('Demo profile').selectOption('admin')
-  await page.getByRole('button', { name: 'Continue to portal' }).click()
+  await page.getByLabel('Demo profile').selectOption('EMP001')
+  await page.getByRole('button', { name: 'Login' }).click()
   await page.getByRole('link', { name: 'Admin', exact: true }).click()
   const limitedRow = page.getByRole('row').filter({ hasText: 'Demo Limited User' })
   const assigned = page.waitForResponse((response) => response.url().endsWith('/api/admin/permissions') && response.request().method() === 'PUT')
   await limitedRow.getByLabel('MatchPoint').check()
   expect((await assigned).ok()).toBe(true)
-  await page.getByRole('button', { name: 'Sign out' }).click()
-  await page.getByLabel('Demo profile').selectOption('limited')
-  await page.getByRole('button', { name: 'Continue to portal' }).click()
+  await page.getByRole('button', { name: 'Logout' }).click()
+  fixture = 'limited'
+  await page.getByLabel('Demo profile').selectOption('EMP002')
+  await page.getByRole('button', { name: 'Login' }).click()
   await expect(page.getByRole('button', { name: 'Open MatchPoint' })).toBeVisible()
   await page.evaluate(() => { history.pushState({}, '', '/admin/users'); window.dispatchEvent(new PopStateEvent('popstate')) })
   await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible()
